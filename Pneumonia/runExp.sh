@@ -3,14 +3,14 @@
 
 
 lr="0.1"
-numclients=600
+numclients=150
 batch_size=8
 numdat=8
 numrounds=10000
 schedrounds=20000
-cuda_device=3
+cuda_device=7
 
-for seed in 1
+for seed in 1 2 3
 do
     daisy=1
     avg=10
