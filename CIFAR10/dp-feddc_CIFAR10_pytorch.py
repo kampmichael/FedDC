@@ -13,6 +13,7 @@ from averaging import Average
 from resnet import Cifar10ResNet50, Cifar10ResNet18
 from client_pytorch import PyTorchNN, evaluateModel
 from vanilla_training import trainEvalLoopVanilla
+from diffprivacy import makeDifferentiallyPrivate
 
 
 #set the parameters
@@ -44,6 +45,10 @@ parser.add_argument('--num-samples-per-client', type=int, default=8,
                     help='Number of samples each client has available (default: 8)')
 parser.add_argument('--report-rounds', type=int, default=25,
                     help='After how many rounds the model should be evaluated and performance reported (default: 25)')
+parser.add_argument('--dp-sigma', type=float, default=0.01,
+                    help='Sigma of differential privacy mechanism (default: 0.01)')
+parser.add_argument('--dp-s', type=float, default=2.0,
+                    help='S of differential privacy mechanism (default: 2)')
 parser.add_argument('--daisy-rounds', type=int, default=1,
                     help='After how many rounds daisy chaining should be used to communicate models (default: 1)')
 parser.add_argument('--aggregate-rounds', type=int, default=10,
@@ -136,6 +141,11 @@ if (args.run_ablation is None):
     trainACCs = [[] for _ in range(args.num_clients)]
     testACCs = [[] for _ in range(args.num_clients)]
 
+    ####### hardcoded differential privacy parameters #############
+    dp_sigma = args.dp_sigma #0.01
+    dp_S = args.dp_s #2.0
+
+
     ## TODO: Move everything (including data) to GPU and only work with indices here.
     for t in range(args.num_rounds):
         for i in range(args.num_clients):
@@ -143,11 +153,13 @@ if (args.run_ablation is None):
             clients[i].update(sample, X_train, y_train) ##TODO: sample is now a list of indices
         if t % args.daisy_rounds == args.daisy_rounds - 1: #daisy chaining
             rng.shuffle(localDataIndex)
-
+            for i in range(args.num_clients): #making parameters differentially private - this makes this step considerably slower, but well...
+                dp_params = makeDifferentiallyPrivate(clients[i].getParameters(),clients[i].getPreviousParameters(), dp_sigma, dp_S)
+                clients[i].setParameters(dp_params)
         if t % args.aggregate_rounds == args.aggregate_rounds - 1: #aggregation
             params = []
             for i in range(args.num_clients): #get the model parameters (weights) of all clients
-                params.append(clients[i].getParameters())
+                params.append(makeDifferentiallyPrivate(clients[i].getParameters(),clients[i].getPreviousParameters(), dp_sigma, dp_S))
             aggParams = aggregator(params) #compute the aggregate
             for i in range(args.num_clients): 
                 clients[i].setParameters(aggParams) #give each client the aggregate as new parameters

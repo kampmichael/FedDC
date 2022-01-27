@@ -48,7 +48,15 @@ parser.add_argument('--daisy-rounds', type=int, default=1,
                     help='After how many rounds daisy chaining should be used to communicate models (default: 1)')
 parser.add_argument('--aggregate-rounds', type=int, default=10,
                     help='After how many rounds the models should be aggregated by the coordinator (default: 10)')
-
+training_args.add_argument('--beta1', type=float, default=0.9,
+                    help='beta1 for FedAdam, FedYogi, FedAdagrad (default:0.9)') #default is taken from experiments in Reddi et al., ADAPTIVE FEDERATED OPTIMIZATION, ICLR 2021
+training_args.add_argument('--beta2', type=float, default=0.99,
+                    help='beta2 for FedAdam, FedYogi (default:0.99)') #default is taken from experiments in Reddi et al., ADAPTIVE FEDERATED OPTIMIZATION, ICLR 2021
+training_args.add_argument('--tau', type=float, default=0.001,
+                    help='tau for FedAdam, FedYogi, FedAdagrad (default:0.001)') #default is taken from experiments in Reddi et al., ADAPTIVE FEDERATED OPTIMIZATION, ICLR 2021
+training_args.add_argument('--eta_global', type=float, default=0.03,
+                    help='server leraning rate for FedAdam, FedYogi, FedAdagrad (default:0.03)') #default for fedadam is taken from experiments in Reddi et al., ADAPTIVE FEDERATED OPTIMIZATION, ICLR 2021
+                    
 parser.add_argument('--restrict-classes', type=int, default=None,
                     help='Number of classes that should be available at maximum for individual clients, if None then all classes are available (default: None)')
 
@@ -136,7 +144,13 @@ if (args.run_ablation is None):
     trainACCs = [[] for _ in range(args.num_clients)]
     testACCs = [[] for _ in range(args.num_clients)]
 
-    ## TODO: Move everything (including data) to GPU and only work with indices here.
+    params = []
+    for i in range(args.num_clients): #get the model parameters (weights) of all clients
+        params.append(clients[i].getParameters())
+    x_t = aggregator(params)
+    m_t = x_t.getCopy()
+    m_t.scalarMultiply(0.0)
+    v_t = args.tau**2
     for t in range(args.num_rounds):
         for i in range(args.num_clients):
             sample = getSample(client_idxs[localDataIndex[i]], args.train_batch_size, rng)
@@ -149,8 +163,24 @@ if (args.run_ablation is None):
             for i in range(args.num_clients): #get the model parameters (weights) of all clients
                 params.append(clients[i].getParameters())
             aggParams = aggregator(params) #compute the aggregate
+            delta = x_t.getCopy() #delta = 1/n sum_i=1^n x^i_t - x_(t-1) 
+            delta.scalarMultiply(-1.0)
+            delta.add(aggParams)
+            old_m_t = m_t.getCopy()
+            old_m_t.scalarMultiply(args.beta1)
+            m_t = delta.getCopy()
+            m_t.scalarMultiply(1.0 - args.beta1)
+            m_t.add(old_m_t)
+            deltaSquared = np.linalg.norm(delta.flatten())
+            #v_t = v_t + deltaSquared # FedAdagrad
+            #v_t = args.beta2*v_t + (1.0 - args.beta2)*deltaSquared #FedAdam
+            v_t = v_t - (1.0 - args.beta2)*deltaSquared * np.sign(v_t - deltaSquared) #FedYogi
+            factor = (args.eta_global / (args.tau + np.sqrt(v_t)))
+            m_t_times_factor = m_t.getCopy()
+            m_t_times_factor.scalarMultiply(factor)
+            x_t.add(m_t_times_factor)
             for i in range(args.num_clients): 
-                clients[i].setParameters(aggParams) #give each client the aggregate as new parameters
+                clients[i].setParameters(x_t) #give each client the aggregate as new parameters
 
         #compute the train and test loss for each client (we might have to do that a bit more rarely for efficiency reasons)
         if t % args.report_rounds == 0:

@@ -109,7 +109,6 @@ class PyTorchNN():
 
         if not isinstance(param, PyTorchNNParameters):
             error_text = "The argument param is not of type" + str(PyTorchNNParameters) + "it is of type " + str(type(param))
-            self.error(error_text)
             raise ValueError(error_text)
 
         state_dict = OrderedDict()
