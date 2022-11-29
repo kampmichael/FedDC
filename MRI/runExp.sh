@@ -11,7 +11,7 @@ numrounds=10000
 schedrounds=5000
 cuda_device=6
 weight_decay=0.01
-for seed in 1 2 3 4 5
+for seed in 1 2 3
 do
     daisy=1
     avg=10

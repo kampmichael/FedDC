@@ -106,7 +106,7 @@ def simpleDaisyChain(models, perm):
     models = models[perm]
     return models
 
-def runAveraging(local_Xtrains, local_ytrains, localModels, X_test, y_test, rounds, rng, b=1, classes = None):
+def runAveraging(local_Xtrains, local_ytrains, localModels, X_test, y_test, rounds, rng, b=1, classes = None, exp_path = ""):
     trainACCs, testACCs = [], []
     m = len(localModels)
     if classes is None:
@@ -122,6 +122,11 @@ def runAveraging(local_Xtrains, local_ytrains, localModels, X_test, y_test, roun
         for i in range(m):
             trainACCs[-1].append(getACC(localModels[i], local_Xtrains[i], local_ytrains[i]))
             testACCs[-1].append(getACC(localModels[i], X_test, y_test))
+        if r % 10 == 0:
+            print("round ",r)
+            pickle.dump(trainACCs, open(os.path.join(exp_path, "trainACCs_tmp.pck"),'wb'))
+            pickle.dump(testACCs, open(os.path.join(exp_path, "testACCs_tmp.pck"),'wb'))
+
     #final model
     avgModel = averageSVCs(localModels)[0]
     for i in range(m):
@@ -149,6 +154,10 @@ def runSimpleDaisyChaining(local_Xtrains, local_ytrains, localModels, X_test, y_
         for i in range(m):
             trainACCs[-1].append(getACC(localModels[i], local_Xtrains[i], local_ytrains[i]))
             testACCs[-1].append(getACC(localModels[i], X_test, y_test))
+        if r % 10 == 0:
+            print("round ",r)
+            pickle.dump(trainACCs, open(os.path.join(exp_path, "trainACCs_tmp.pck"),'wb'))
+            pickle.dump(testACCs, open(os.path.join(exp_path, "testACCs_tmp.pck"),'wb'))
     #final model
     avgModel = averageSVCs(localModels)[0]
     for i in range(m):

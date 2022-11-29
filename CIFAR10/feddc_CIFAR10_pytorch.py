@@ -136,10 +136,11 @@ if (args.run_ablation is None):
     trainACCs = [[] for _ in range(args.num_clients)]
     testACCs = [[] for _ in range(args.num_clients)]
 
+    ## TODO: Move everything (including data) to GPU and only work with indices here.
     for t in range(args.num_rounds):
         for i in range(args.num_clients):
             sample = getSample(client_idxs[localDataIndex[i]], args.train_batch_size, rng)
-            clients[i].update(sample, X_train, y_train) 
+            clients[i].update(sample, X_train, y_train) ##TODO: sample is now a list of indices
         if t % args.daisy_rounds == args.daisy_rounds - 1: #daisy chaining
             rng.shuffle(localDataIndex)
 

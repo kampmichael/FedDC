@@ -30,7 +30,7 @@ class PyTorchNNFedProx():
     def setLoss(self, lossFunction):
         self._loss = eval("nn." + lossFunction + "()")
 
-    def setUpdateRule(self, updateRule, learningRate, schedule_ep, schedule_changerate, weight_decay, **kwargs):
+    def setUpdateRule(self, updateRule, learningRate, schedule_ep, schedule_changerate, **kwargs):
         additional_params = ""
         for k in kwargs:
             additional_params += ", " + k  + "=" + str(kwargs.get(k))

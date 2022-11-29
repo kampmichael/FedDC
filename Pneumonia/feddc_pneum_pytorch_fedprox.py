@@ -10,7 +10,7 @@ import argparse
 
 from dataset_pneum import *
 from averaging import Average
-from client_pytorch import PyTorchNNFedProx, evaluateModel
+from client_fedProx_pytorch import PyTorchNNFedProx, evaluateModel
 from vanilla_training import trainEvalLoopVanilla
 from pneumnet import Pneumnet
 

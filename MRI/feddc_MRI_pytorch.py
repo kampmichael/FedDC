@@ -144,6 +144,7 @@ if (args.run_ablation is None):
     trainACCs = [[] for _ in range(args.num_clients)]
     testACCs = [[] for _ in range(args.num_clients)]
 
+    ## TODO: Move everything (including data) to GPU and only work with indices here.
     for t in range(args.num_rounds):
         for i in range(args.num_clients):
             sample = getSample(client_idxs[localDataIndex[i]], args.train_batch_size, rng)

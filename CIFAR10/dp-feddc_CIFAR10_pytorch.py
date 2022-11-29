@@ -8,55 +8,47 @@ import time
 import os
 import argparse
 
-from dataset_pneum import *
+from dataset_cifar10 import *
 from averaging import Average
+from resnet import Cifar10ResNet50, Cifar10ResNet18
 from client_pytorch import PyTorchNN, evaluateModel
 from vanilla_training import trainEvalLoopVanilla
-from pneumnet import Pneumnet
-from torch.utils.data import TensorDataset, DataLoader
+from diffprivacy import makeDifferentiallyPrivate
 
-class ParseTrainingArgs(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        setattr(namespace, self.dest, dict())
-        print(values)
-        for value in values:
-            key, value = value.split('=')
-            try:
-                value = float(value)
-            except ValueError:
-                pass
-            getattr(namespace, self.dest)[key] = value
+
 #set the parameters
 
 parser = argparse.ArgumentParser(description='Federated daisy chaining')
 # Training Hyperparameters
 training_args = parser.add_argument_group('training')
-training_args.add_argument('--dataset', type=str, default='Pneum',
-                    choices=['Pneum'],
-                    help='dataset (default: Pneum)')
+training_args.add_argument('--dataset', type=str, default='mnist',
+                    choices=['cifar10'],
+                    help='dataset (default: Cifar10)')
 training_args.add_argument('--model', type=str, default='resnet18', choices=['resnet18'],
                     help='model architecture (default: resnet18)')
 training_args.add_argument('--optimizer', type=str, default='SGD', choices=['SGD','Adam'],
-                    help='optimizer (default: Adam)')
+                    help='optimizer (default: SGD)')
 training_args.add_argument('--train-batch-size', type=int, default=8,
                     help='input batch size for training (default: 8)')
-training_args.add_argument('--lr', type=float, default=0.1,
-                    help='learning rate (default: 0.1)')
+training_args.add_argument('--lr', type=float, default=0.01,
+                    help='learning rate (default: 0.01)')
 training_args.add_argument('--lr-schedule-ep', type=int, default=None,
                     help='number of epochs after which to change lr (set to None if no schedule) (default: None)')
 training_args.add_argument('--lr-change-rate', type=float, default=0.5,
                     help='(multiplicative) change factor for lr (default: 0.5)')
-training_args.add_argument('--training-args',nargs='*', action=ParseTrainingArgs, default=None,
-                    help='additional arguments for the optimizer (default: None, example: weight_decay = 0.0005)')          
 
-parser.add_argument('--num-clients', type=int, default=100,
-                    help='Number of clients in federated network (default: 100)')
+parser.add_argument('--num-clients', type=int, default=1,
+                    help='Number of clients in federated network (default: 1)')
 parser.add_argument('--num-rounds', type=int, default=100,
                     help='Number of rounds of training (default: 100)')
 parser.add_argument('--num-samples-per-client', type=int, default=8,
                     help='Number of samples each client has available (default: 8)')
 parser.add_argument('--report-rounds', type=int, default=25,
                     help='After how many rounds the model should be evaluated and performance reported (default: 25)')
+parser.add_argument('--dp-sigma', type=float, default=0.01,
+                    help='Sigma of differential privacy mechanism (default: 0.01)')
+parser.add_argument('--dp-s', type=float, default=2.0,
+                    help='S of differential privacy mechanism (default: 2)')
 parser.add_argument('--daisy-rounds', type=int, default=1,
                     help='After how many rounds daisy chaining should be used to communicate models (default: 1)')
 parser.add_argument('--aggregate-rounds', type=int, default=10,
@@ -83,8 +75,6 @@ parser.add_argument('--seed', type=int, default=42,
 #                     help='print statistics during training and testing')
 
 
-parser.add_argument('--data-path', type=str, default=None,
-                    help='Path to folder with data of Kaggle MRI brain tumor data set (https://www.kaggle.com/navoneel/brain-mri-images-for-brain-tumor-detection).')
 args = parser.parse_args()
 
 
@@ -94,11 +84,11 @@ randomState = args.seed
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-name = "FedDC_Pneumonia_pneumnet"
+name = "FedDC_cifar10_resnet18"
 
 aggregator = Average()
 mode = 'gpu'
-lossFunction = "CrossEntropyLoss"#"BCEWithLogitsLoss"
+lossFunction = "CrossEntropyLoss"
 
 #here it would of course be smarter to have one GPU per client...
 device = torch.device("cuda") #torch.device("cuda:0" if torch.cuda.is_available() else None)
@@ -109,21 +99,11 @@ if (args.run_ablation is None):
     clients = []
     for _ in range(args.num_clients):
         client = PyTorchNN(args.train_batch_size, mode, device)
-        torchnetwork = torchvision.models.resnet18(progress=True).to(device) #(pretrained=True, progress=True).to(device)
-        torchnetwork.fc = nn.Linear(512, 2).to(device)
-        #for layer in torchnetwork.children():
-        #    if hasattr(layer, 'reset_parameters'):
-        #        layer.reset_parameters()
-        #        if type(layer) == nn.Linear or type(layer) == nn.Conv2d:
-        #            torch.nn.init.xavier_uniform_(layer.weight)
-        #torchnetwork = Pneumnet()
-        #torchnetwork = torchnetwork.cuda(device)
+        torchnetwork = Cifar10ResNet18() #Cifar10ResNet50()
+        torchnetwork = torchnetwork.cuda(device)
         client.setCore(torchnetwork)
         client.setLoss(lossFunction)
-        if args.training_args is None:
-            client.setUpdateRule(args.optimizer, args.lr, args.lr_schedule_ep, args.lr_change_rate)
-        else:
-            client.setUpdateRule(args.optimizer, args.lr, args.lr_schedule_ep, args.lr_change_rate, **args.training_args)
+        client.setUpdateRule(args.optimizer, args.lr, args.lr_schedule_ep, args.lr_change_rate)
         clients.append(client)
         
     #get a fixed random number generator
@@ -147,7 +127,7 @@ if (args.run_ablation is None):
     f.close()
 
     #get the data
-    X_train, y_train, X_test, y_test = getPneum(device)
+    X_train, y_train, X_test, y_test = getCIFAR10(device)
     n_train = y_train.shape[0]
     if (args.restrict_classes is None):
         client_idxs = splitIntoLocalData(n_train, args.num_clients, args.num_samples_per_client, rng)
@@ -161,18 +141,25 @@ if (args.run_ablation is None):
     trainACCs = [[] for _ in range(args.num_clients)]
     testACCs = [[] for _ in range(args.num_clients)]
 
+    ####### hardcoded differential privacy parameters #############
+    dp_sigma = args.dp_sigma #0.01
+    dp_S = args.dp_s #2.0
+
+
     ## TODO: Move everything (including data) to GPU and only work with indices here.
     for t in range(args.num_rounds):
         for i in range(args.num_clients):
             sample = getSample(client_idxs[localDataIndex[i]], args.train_batch_size, rng)
-            clients[i].update(sample, X_train, y_train)
-        if t % args.daisy_rounds == 0: #daisy chaining
+            clients[i].update(sample, X_train, y_train) ##TODO: sample is now a list of indices
+        if t % args.daisy_rounds == args.daisy_rounds - 1: #daisy chaining
             rng.shuffle(localDataIndex)
-
-        if t % args.aggregate_rounds == 0: #aggregation
+            for i in range(args.num_clients): #making parameters differentially private - this makes this step considerably slower, but well...
+                dp_params = makeDifferentiallyPrivate(clients[i].getParameters(),clients[i].getPreviousParameters(), dp_sigma, dp_S)
+                clients[i].setParameters(dp_params)
+        if t % args.aggregate_rounds == args.aggregate_rounds - 1: #aggregation
             params = []
             for i in range(args.num_clients): #get the model parameters (weights) of all clients
-                params.append(clients[i].getParameters())
+                params.append(makeDifferentiallyPrivate(clients[i].getParameters(),clients[i].getPreviousParameters(), dp_sigma, dp_S))
             aggParams = aggregator(params) #compute the aggregate
             for i in range(args.num_clients): 
                 clients[i].setParameters(aggParams) #give each client the aggregate as new parameters
@@ -193,25 +180,13 @@ if (args.run_ablation is None):
 
     pickle.dump(trainLosses, open(exp_path+"/trainLosses.pck",'wb'))
     pickle.dump(testLosses,  open(exp_path+"/testLosses.pck",'wb'))
-    pickle.dump(trainACCs, open(exp_path+"/trainACCs.pck",'wb'))
-    pickle.dump(testACCs,  open(exp_path+"/testACCs.pck",'wb'))
-
 
 
 elif (args.run_ablation == 'vanilla_training'):
 
-    X_train, y_train, X_test, y_test = getPneum(device)
-    
-    data_train = TensorDataset(torch.tensor(X_train, device=device), torch.tensor(y_train, device=device))
-    trainloader = DataLoader(data_train, batch_size = args.train_batch_size, shuffle=True)
+    trainloader, testloader, classes = getCIFAR10DataLoader(args.train_batch_size, args.num_clients, args.num_samples_per_client)
 
-    data_test =  TensorDataset(torch.tensor(X_test, device=device), torch.tensor(y_test, device=device))
-    testloader = DataLoader(data_test, batch_size = args.train_batch_size, shuffle=False)
-
-
-    vanillaModel = torchvision.models.resnet18(progress=True).to(device)
-    vanillaModel.fc = nn.Linear(512, 2).to(device)
-
+    vanillaModel = Cifar10ResNet18().cuda(device)
 
     if (lossFunction == "CrossEntropyLoss"):   
         loss = nn.CrossEntropyLoss()

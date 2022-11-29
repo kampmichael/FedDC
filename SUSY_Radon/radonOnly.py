@@ -22,8 +22,8 @@ y = data[:,0]
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=randomState)
 
 rounds = 500
-b = 1
-bavg = 50
+b = 5
+bavg = 5
 m = 441
 n_local = 2
 
