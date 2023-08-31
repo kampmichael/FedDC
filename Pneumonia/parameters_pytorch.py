@@ -127,6 +127,14 @@ class PyTorchNNParameters(Parameters):
                 self._state[k] *= int(scalar)
             else:
                 self._state[k] = np.multiply(self._state[k], scalar, out=self._state[k], casting="unsafe")
+
+    def addNormalNoise(self, loc, scale):
+        for k in self._state:
+            if isinstance(self._state[k], np.int64):
+                self._state[k] += int(np.random.normal(loc=loc, scale=scale))
+            else:
+                self._state[k] += np.random.normal(loc=loc, scale=scale, size=self._state[k].shape)
+
     
     def distance(self, other) -> float:
         '''
@@ -225,5 +233,5 @@ class PyTorchNNParameters(Parameters):
             n = np.prod(s) #the number of elements n the curent weight matrix
             arr = v[currPos:currPos+n].reshape(s)
             newState[k] = arr.copy()
-            currPos = n
+            currPos += n
         self.set(newState)

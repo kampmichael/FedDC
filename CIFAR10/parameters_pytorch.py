@@ -233,5 +233,5 @@ class PyTorchNNParameters(Parameters):
             n = np.prod(s) #the number of elements n the curent weight matrix
             arr = v[currPos:currPos+n].reshape(s)
             newState[k] = arr.copy()
-            currPos = n
+            currPos += n
         self.set(newState)
